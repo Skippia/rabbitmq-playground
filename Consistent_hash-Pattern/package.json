@@ -1,0 +1,19 @@
+{
+  "name": "rabbitmq-rpc",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "server": "ts-node server.ts"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/amqplib": "^0.10.5",
+    "@types/node": "^20.12.7",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "amqplib": "^0.10.4"
+  }
+}

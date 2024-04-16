@@ -1,0 +1,30 @@
+{
+  "name": "rabbitmq-rpc",
+  "type": "module",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "lint": "eslint \"{server,client}/**/*.ts\" --fix",
+    "client": "node --experimental-specifier-resolution=node --loader ts-node/esm rabbit/client.ts",
+    "server": "node --experimental-specifier-resolution=node --loader ts-node/esm rabbit/server.ts"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/amqplib": "^0.10.5",
+    "@types/node": "^20.12.7",
+    "@typescript-eslint/eslint-plugin": "^5.59.9",
+    "@typescript-eslint/parser": "^5.59.9",
+    "eslint": "^8.42.0",
+    "eslint-config-prettier": "^8.8.0",
+    "eslint-import-resolver-typescript": "^3.6.1",
+    "eslint-plugin-import": "^2.29.1",
+    "eslint-plugin-prettier": "^4.2.1",
+    "prettier": "^2.8.8",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "amqplib": "^0.10.4"
+  }
+}

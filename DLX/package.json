@@ -4,7 +4,6 @@
   "version": "1.0.0",
   "description": "",
   "scripts": {
-    "lint": "eslint \"{server,client}/**/*.ts\" --fix",
     "client": "node --experimental-specifier-resolution=node --loader ts-node/esm rabbit/client.ts",
     "server": "node --experimental-specifier-resolution=node --loader ts-node/esm rabbit/server.ts"
   },

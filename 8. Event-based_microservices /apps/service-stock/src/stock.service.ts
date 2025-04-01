@@ -15,10 +15,9 @@ export class StockService {
   public async pubSubHandler(msg: any) {
     console.log('2: got message', msg)
 
-    return { response: 42 }
+    // await new this.stockModel(data).save();
+
+    return 42
   }
 
-  public async createStock(data) {
-    return await new this.stockModel(data).save();
-  }
 }

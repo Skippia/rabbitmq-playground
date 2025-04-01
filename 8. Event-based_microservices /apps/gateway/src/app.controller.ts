@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Post } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 
@@ -7,7 +7,7 @@ export class AppController {
   constructor(private readonly amqpConnection: AmqpConnection) {
   }
 
-  @Get('create-stock')
+  @Post('create-stock')
   async createStock() {
 
     const backResponse = await this.amqpConnection.request({

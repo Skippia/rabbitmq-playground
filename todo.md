@@ -1,5 +1,7 @@
 # RabbitMQ Deep Dive - Todo List
 
+## Core concepts
+
 - **1. Pub-Sub:**  
   Demonstrates a publish-subscribe pattern with **topic** / fanout exchanges for message broadcasting.
 
@@ -17,7 +19,7 @@
   - *Plugin*: `rabbitmq_consistent_hash_exchange`
 
 - **6. DLX (Dead Letter Exchange):**  
-  Routes undeliverable messages to a dead-letter exchange for error handling and retries.
+  Routes undeliverable messages to a dead-letter exchange for error handling and retries (with exponential backoff?)
 
 - **7. Delay Schedule:**
   - *Description:* Implements message delay to schedule messages for future processing.
@@ -27,40 +29,46 @@
 - **8. Event-based microservices:**
   Using RabbitMQ as event bus in Nestjs microservices
 
-## Additional Advanced Features
 
-- **Direct, Topic, and Headers Exchanges:**  
-  Explores various exchange types to understand their routing mechanisms and use-case differences.
+## Infra
 
-- **Clustering and High Availability:**  
-  Sets up a RabbitMQ cluster to ensure fault tolerance and minimal downtime through replication.
+1. **High Availability**
+   - Implement mirrored queues with HA policies
+   - Cluster setup with 3 nodes (document failover scenarios)
+   - *Task*: Simulate node failure and observe recovery
 
-- **Federation and Shovels:**  
-  Connects multiple brokers or clusters using federation and shovel plugins for inter-cluster messaging.
+2. **Quorum Queues**
+   - Implement RAFT-based queues for data safety
+   - *Task*: Compare performance vs classic mirrored queues
+  
+3. **Shovels & Federation**
+   - Setup cross-cluster messaging
+   - *Plugins*: `rabbitmq_shovel`, `rabbitmq_federation`
+   - *Task*: Implement active-active disaster recovery
+  
+4. **Prometheus Metrics**
+   - Setup monitoring with `rabbitmq_prometheus`
+   - *Task*: Create Grafana dashboard for key metrics
+   - *Alert*: Configure queue length/consumer count alerts
 
-- **Monitoring and Management:**  
-  Utilizes management plugins and external tools for real-time monitoring and performance tracking.
 
-- **Security and Authentication:**  
-  Implements SSL/TLS, robust authentication, and fine-grained access control for secure deployments.
+5. **Authentication & Authorization**
+   - Setup TLS for encrypted connections
+   - Implement OAuth2/JWT auth via `rabbitmq_auth_backend_http`
+   - *Plugin*: `rabbitmq_auth_backend_oauth2`
 
-- **Performance Tuning and Benchmarking:**  
-  Benchmarks RabbitMQ under load and applies tuning strategies to optimize throughput and reduce latency.
+## Advanced
 
-- **Event-Driven Microservices Architecture:**  
-  Designs microservices that use RabbitMQ for asynchronous communication, event sourcing, and CQRS.
+1. **Priority Queues**
+   - Implement message prioritization
+   - *Task*: Test starvation scenarios with mixed priorities
+  
+2. **QoS (Quality of Service)**
+   - Implement prefetch counts for consumer fairness
+   - *Task*: Test with bursty loads and slow consumers
 
-- **Message Retry and Dead-Letter Handling Enhancements:**  
-  Develops strategies for message retries with exponential backoff and improved dead-letter queue management.
+3. **Message Serialization**
+    - Implement Avro/Protobuf serialization
+    - *Task*: Add schema validation in consumers
 
-- **Additional Plugins (e.g., MQTT, STOMP):**  
-  Explores integration with alternative messaging protocols using MQTT or STOMP plugins.
-
-- **Developer Tooling and Local Testing:**  
-  Enhances local development with Docker Compose setups, CI/CD pipelines, and comprehensive integration tests.
-
----
-
-## Summary
-
-This roadmap outlines production-ready RabbitMQ features using Node.js, emphasizing messaging patterns, reliability, security, performance, and monitoring best practices.
+4. 

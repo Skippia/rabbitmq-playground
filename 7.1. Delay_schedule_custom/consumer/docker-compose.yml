@@ -1,0 +1,43 @@
+version: "3.8"
+
+services:
+  consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      FAIL: "false"
+      SLEEP: "0"
+      FROM_USERNAME: "rmuser"
+      FROM_PASSWORD: "rmpassword"
+      FROM_HOSTNAME: "rabbitmq"
+      FROM_PORT: "5672"
+      FROM_QUEUE: "inbox"
+      FROM_EXCHANGE: "in"
+      FROM_ROUTINGKEY: "gen"
+      FROM_PASSIVE: "false"
+      RETRY_QUEUE: "false"
+      RETRY_QUEUE_TTL: "15000"
+      PREFETCH: "2"
+    
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    hostname: rabbitmq
+    restart: always
+    ports:
+      - 5672:5672 
+      - 15672:15672
+    environment:
+      RABBITMQ_DEFAULT_USER: rmuser
+      RABBITMQ_DEFAULT_PASS: rmpassword
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: -rabbit disk_free_limit 2147483648
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 5s
+      timeout: 1s
+      retries: 20
+    volumes:
+      - ../..rabbitmq-volume:/var/lib/rabbitmq
+      - "../../rabbitmq_enabled_plugins:/etc/rabbitmq/enabled_plugins"

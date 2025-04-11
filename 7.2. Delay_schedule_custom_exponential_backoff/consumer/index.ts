@@ -2,6 +2,7 @@ import amqp, { Connection, Channel, ConsumeMessage, ChannelModel } from 'amqplib
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import process from 'process';
+import { channel } from 'diagnostics_channel';
 
 const ENV = {
   FROM_USERNAME: process.env.FROM_USERNAME || "rmuser",
@@ -17,8 +18,8 @@ const ENV = {
   SLEEP: parseInt(process.env.SLEEP || "0", 10),
   RETRY_QUEUE: process.env.RETRY_QUEUE === "true",
   RETRY_QUEUE_TTL: parseInt(process.env.RETRY_QUEUE_TTL || "15000", 10),
-  RETRY_THRESHOLD: parseInt(process.env.RETRY_THRESHOLD || "3", 10),
   BASE_DELAY: parseInt(process.env.BASE_DELAY || "15000", 10),
+  RETRY_THRESHOLD: parseInt(process.env.RETRY_THRESHOLD || "3", 10),
 };
 
 const args = yargs(hideBin(process.argv))
@@ -26,11 +27,6 @@ const args = yargs(hideBin(process.argv))
     type: "string",
     default: `amqp://${ENV.FROM_USERNAME}:${ENV.FROM_PASSWORD}@${ENV.FROM_HOSTNAME}:${ENV.FROM_PORT}/`,
     describe: "AMQP From URI"
-  })
-  .option("exchange-type", {
-    type: "string",
-    default: "direct",
-    describe: "Exchange type - direct|fanout|topic|x-custom"
   })
   .option("consumer-tag", {
     type: "string",
@@ -41,7 +37,6 @@ const args = yargs(hideBin(process.argv))
 
 
 const URI_FROM: string = args.uriFrom;
-const EXCHANGE_TYPE: string = args["exchange-type"];
 const CONSUMER_TAG: string = args["consumer-tag"];
 
 function fatalError(msg: string, err?: any): never {
@@ -49,76 +44,111 @@ function fatalError(msg: string, err?: any): never {
   process.exit(1);
 }
 
-function getRetryCount(msg: ConsumeMessage): number {
-  const headers = msg.properties.headers;
-
-  if (headers && headers['x-retry-count']) {
-    return parseInt(headers['x-retry-count'], 10);
-  }
-
-  return 0;
-}
-
 async function declareAlternateExchange(channel: Channel) {
-  await channel.assertExchange(`ex.last-hope`, "fanout", { durable: true });
-  await channel.assertQueue(`q.last-hope`, { durable: true });
-  await channel.bindQueue('q.last-hope', `ex.last-hope`, '');
-
+  await channel.assertExchange('ex.last-hope', "fanout", { durable: true });
+  await channel.assertQueue('q.last-hope', { durable: true });
+  await channel.bindQueue('q.last-hope', 'ex.last-hope', '');
 }
-async function createConsumer(): Promise<{ connection: ChannelModel, channel: Channel }> {
-  const conn = await amqp.connect(URI_FROM)
-  const channel = await conn.createChannel()
-  let queueInfo: amqp.Replies.AssertQueue
 
-  const retryQueueName = `${ENV.FROM_QUEUE}.retry.dlx`;
-  const retryQueueArgs = { "x-dead-letter-exchange": `${ENV.FROM_QUEUE}.retry`, "x-message-ttl": ENV.RETRY_QUEUE_TTL, 'x-dead-letter-routing-key': 'retry', 'queue-mode': 'lazy' };
+async function declareRouterDelayExchange(channel: Channel) {
+  await channel.assertExchange('ex.delay-router', "direct", { durable: true });
+}
 
-  await declareAlternateExchange(channel)
+async function declareDlxRetryExchange(channel: Channel) {
+  await channel.assertExchange(`ex.${ENV.FROM_QUEUE}.retry.dlx`, "fanout", { durable: true });
+}
 
-  await channel.assertQueue(retryQueueName, { durable: true, autoDelete: false, exclusive: false, arguments: retryQueueArgs });
+async function declareDlxRetryQueues(channel: Channel) {
+  await channel.assertQueue(`q.${ENV.FROM_QUEUE}.retry1.dlx`, {
+    durable: true,
+    autoDelete: false,
+    exclusive: false,
+    arguments: {
+      "x-dead-letter-exchange": `ex.${ENV.FROM_QUEUE}.retry.dlx`,
+      'x-dead-letter-routing-key': ENV.FROM_ROUTINGKEY,
+      "x-message-ttl": ENV.RETRY_QUEUE_TTL,
+      'queue-mode': 'lazy'
+    }
+  });
+  await channel.assertQueue(`q.${ENV.FROM_QUEUE}.retry2.dlx`, {
+    durable: true,
+    autoDelete: false,
+    exclusive: false,
+    arguments: {
+      "x-dead-letter-exchange": `ex.${ENV.FROM_QUEUE}.retry.dlx`,
+      'x-dead-letter-routing-key': ENV.FROM_ROUTINGKEY,
+      "x-message-ttl": ENV.RETRY_QUEUE_TTL * 2,
+      'queue-mode': 'lazy'
+    }
+  });
+  await channel.assertQueue(`q.${ENV.FROM_QUEUE}.retry3.dlx`, {
+    durable: true,
+    autoDelete: false,
+    exclusive: false,
+    arguments: {
+      "x-dead-letter-exchange": `ex.${ENV.FROM_QUEUE}.retry.dlx`,
+      'x-dead-letter-routing-key': ENV.FROM_ROUTINGKEY,
+      "x-message-ttl": ENV.RETRY_QUEUE_TTL * 3,
+      'queue-mode': 'lazy'
+    }
+  });
 
-  await channel.assertExchange(`${ENV.FROM_QUEUE}.fail`, "direct", { durable: true });
-  await channel.assertExchange(`${ENV.FROM_QUEUE}.retry`, "direct", {
+  await channel.bindQueue(`q.${ENV.FROM_QUEUE}.retry1.dlx`, `ex.delay-router`, 'delay1');
+  await channel.bindQueue(`q.${ENV.FROM_QUEUE}.retry2.dlx`, `ex.delay-router`, 'delay2');
+  await channel.bindQueue(`q.${ENV.FROM_QUEUE}.retry3.dlx`, `ex.delay-router`, 'delay3');
+}
+
+async function declareInboxQueue(channel: Channel) {
+  const queueInfo = await channel.assertQueue(`q.${ENV.FROM_QUEUE}`, {
+    durable: true, autoDelete: false, exclusive: false,
+    arguments: {
+      'x-dead-letter-exchange': 'ex.last-hope'
+    }
+  })
+
+  await channel.bindQueue(`q.${ENV.FROM_QUEUE}`, `ex.${ENV.FROM_EXCHANGE}`, ENV.FROM_ROUTINGKEY);
+  await channel.bindQueue(`q.${ENV.FROM_QUEUE}`, `ex.${ENV.FROM_EXCHANGE}.retry.dlx`, "");
+}
+
+async function declareInboxExchange(channel: Channel) {
+  await channel.assertExchange(`ex.${ENV.FROM_EXCHANGE}`, 'direct', {
     durable: true, arguments: {
       "alternate-exchange": 'ex.last-hope'
     }
   });
+}
 
+async function createConsumer(): Promise<{ connection: ChannelModel, channel: Channel }> {
+  const connection = await amqp.connect(URI_FROM)
+  const channel = await connection.createChannel()
 
-  await channel.bindQueue(retryQueueName, `${ENV.FROM_QUEUE}.fail`, ENV.FROM_ROUTINGKEY);
-  await channel.bindQueue(retryQueueName, `${ENV.FROM_QUEUE}.fail`, 'retry');
+  await declareAlternateExchange(channel)
+  await declareRouterDelayExchange(channel)
+  await declareDlxRetryExchange(channel)
 
-  queueInfo = await channel.assertQueue(ENV.FROM_QUEUE, {
-    durable: true, autoDelete: false, exclusive: false, arguments: ENV.RETRY_QUEUE
-      ? { "x-dead-letter-exchange": `${ENV.FROM_QUEUE}.fail` }
-      : undefined
-  })
+  await declareDlxRetryQueues(channel)
 
-  await channel.bindQueue(ENV.FROM_QUEUE, `${ENV.FROM_QUEUE}.retry`, ENV.FROM_ROUTINGKEY);
-  await channel.bindQueue(ENV.FROM_QUEUE, `${ENV.FROM_QUEUE}.retry`, 'retry');
-
-
-  if (ENV.FROM_EXCHANGE && ENV.FROM_ROUTINGKEY) {
-    await channel.assertExchange(ENV.FROM_EXCHANGE, EXCHANGE_TYPE, { durable: true });
-    await channel.bindQueue(ENV.FROM_QUEUE, ENV.FROM_EXCHANGE, ENV.FROM_ROUTINGKEY);
-  }
-
-  console.log(`FROM: ${queueInfo.queue} messages in queue ${ENV.FROM_QUEUE}`);
+  await declareInboxExchange(channel)
+  await declareInboxQueue(channel)
 
   await channel.prefetch(ENV.PREFETCH, false);
 
-  return { connection: conn, channel };
+  return { connection: connection, channel };
+}
+function getRetryCount(msg: ConsumeMessage): number {
+  const retriedCount = msg.properties.headers?.['x-retry-count'] || 0;
+
+  return retriedCount
 }
 
 async function runConsumer() {
-  const { connection: conn, channel } = await createConsumer();
+  const { connection, channel } = await createConsumer();
+  const startDate = Date.now()
 
-  console.log(`Queue bound. Starting consumption with consumer tag "${CONSUMER_TAG}" and sleep ${ENV.SLEEP} ms`);
-
-  await channel.consume(ENV.FROM_QUEUE, async (msg: ConsumeMessage | null) => {
+  await channel.consume(`q.${ENV.FROM_QUEUE}`, async (msg: ConsumeMessage | null) => {
     if (!msg) return;
 
-    console.log('message RK is:', msg.fields.routingKey, msg.fields.redelivered)
+    console.log(`Past ${(Date.now() - startDate) / 1000}s:`, msg.fields.routingKey, msg.properties.headers?.['x-retry-count'] ?? null)
 
     try {
       if (ENV.SLEEP) {
@@ -145,40 +175,40 @@ async function runConsumer() {
     } catch (err) {
       console.error("Error processing message:", (err as Error).message);
 
-      let retryCount = getRetryCount(msg);
-      retryCount++;
+      const retryCountMsg = getRetryCount(msg)
 
-      const newHeaders = { ...msg.properties.headers, 'x-retry-count': retryCount };
-
-      if (retryCount > ENV.RETRY_THRESHOLD) {
-        console.log("Retry threshold exceeded; sending message to poison queue");
-
-        channel.publish('ex.last-hope', '', msg.content, {
-          persistent: true,
-          headers: newHeaders,
-        });
+      if (retryCountMsg >= ENV.RETRY_THRESHOLD) {
+        channel.reject(msg, false);
       } else {
-        //
+        channel.publish('ex.delay-router', `delay${retryCountMsg + 1}`, msg.content, {
+          ...msg.properties,
+          headers: {
+            ...msg.properties.headers,
+            'x-retry-count': retryCountMsg + 1
+          }
+        });
+
+        // Remove message from inbox queue
+        channel.ack(msg)
       }
-      channel.reject(msg, false);
     }
   }, { consumerTag: CONSUMER_TAG, noAck: false })
 
-  return { conn, channel };
+  return { connection, channel };
 }
 
 async function main() {
   try {
-    const { conn } = await runConsumer();
+    const { connection } = await runConsumer();
 
     process.on("SIGINT", async () => {
       console.log("SIGINT received, shutting down...");
-      await conn.close();
+      await connection.close();
       process.exit(0);
     });
     process.on("SIGTERM", async () => {
       console.log("SIGTERM received, shutting down...");
-      await conn.close();
+      await connection.close();
       process.exit(0);
     });
   } catch (err) {

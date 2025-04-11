@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   consumer:
     build:
@@ -23,10 +21,10 @@ services:
       FROM_HOSTNAME: "rabbitmq"
       FROM_PORT: "5672"
       FROM_QUEUE: "inbox"
-      FROM_EXCHANGE: "in"
+      FROM_EXCHANGE: "inbox"
       FROM_ROUTINGKEY: "gen"
       RETRY_QUEUE: "true"
-      RETRY_QUEUE_TTL: "5000"
+      RETRY_QUEUE_TTL: "10000"
       PREFETCH: "1"
     networks:
       - rabbitmq-share-net

@@ -6,7 +6,7 @@
   "scripts": {
     "start": "tsx ./index.ts",
     "docker": "docker-compose up -d && docker-compose -f ./publisher/docker-compose.yml up -d && docker-compose -f ./consumer/docker-compose.yml up",
-    "clean": "docker rm $(docker ps -aq) -f && docker volume rm 71delay_schedule_custom_rabbitmq_data"
+    "clean": "docker rm $(docker ps -aq) -f && docker volume rm 72delay_schedule_custom_exponential_backoff_rabbitmq_data"
   },
   "author": "",
   "license": "ISC",

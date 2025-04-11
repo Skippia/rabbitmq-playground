@@ -19,13 +19,10 @@ const ENV = {
 const argv = yargs(hideBin(process.argv)).option('uriTo', {
   type: 'string',
   default: `amqp://${ENV.USERNAME}:${ENV.PASSWORD}@${ENV.HOSTNAME}:${ENV.PORT}/`,
-}).option('exchange-type', {
-  type: 'string',
-  default: 'direct',
 }).parseSync();
 
 const uriTo = argv.uriTo;
-``
+
 console.dir({
   ENV,
   argv
@@ -35,25 +32,27 @@ async function connectTo(): Promise<{ connection: amqp.ChannelModel, channel: Ch
   const connection = await amqp.connect(uriTo);
   const channel = await connection.createChannel();
 
-  const q = await channel.checkQueue(ENV.TO_QUEUE);
+  const q = await channel.checkQueue(`q.${ENV.TO_QUEUE}`);
   console.log(`${q.messageCount} messages in queue`);
 
   return { connection, channel };
 }
 
 async function publish(channel: Channel, body: Buffer) {
-  const routing = ENV.TO_EXCHANGE ? ENV.ROUTING_KEY : ENV.TO_QUEUE;
+  const routing = ENV.ROUTING_KEY
   const random = Math.floor(Math.random() * 100);
 
   // Finally get into q.last-hope exchange via alternate exchange
   if (random > 90) {
-    channel.publish(ENV.TO_EXCHANGE, 'unknown-key', body, {
+    console.warn('Generate poison message!')
+
+    channel.publish(`ex.${ENV.TO_EXCHANGE}`, 'unknown-key', body, {
       contentType: 'text/plain',
       deliveryMode: 2,
     })
   // Finally will be retried in the same queue
   } else {
-    channel.publish(ENV.TO_EXCHANGE, routing, body, {
+    channel.publish(`ex.${ENV.TO_EXCHANGE}`, routing, body, {
       contentType: 'text/plain',
       deliveryMode: 2,
     });

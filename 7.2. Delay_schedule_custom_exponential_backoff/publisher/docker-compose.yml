@@ -18,9 +18,9 @@ services:
       TO_HOSTNAME: "rabbitmq"
       TO_PORT: "5672"
       TO_QUEUE: "inbox"
-      TO_EXCHANGE: "in"
+      TO_EXCHANGE: "inbox"
       TO_ROUTINGKEY: "gen"
-      COUNT: "100000"
+      COUNT: "1"
       SLEEP: "1000"
     networks:
       - rabbitmq-share-net

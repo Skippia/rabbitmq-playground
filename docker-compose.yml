@@ -22,5 +22,5 @@ services:
       timeout: 1s
       retries: 20
     volumes:
-      - ./rabbitmq-volume:/var/lib/rabbitmq
+      # - ./rabbitmq-volume:/var/lib/rabbitmq
       - "./rabbitmq_enabled_plugins:/etc/rabbitmq/enabled_plugins"

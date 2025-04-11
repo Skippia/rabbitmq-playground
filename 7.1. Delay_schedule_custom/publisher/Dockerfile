@@ -2,10 +2,6 @@ FROM node:alpine
 
 WORKDIR /usr/src/app
 
-COPY ../package*.json ./
+COPY ../package.json ../tsconfig.json ./
 
-RUN npm install
-
-COPY ./index.ts
-
-RUN npm run start:publisher
+ENTRYPOINT npm run start

@@ -144,6 +144,22 @@ async function runConsumer() {
       }
     } catch (err) {
       console.error("Error processing message:", (err as Error).message);
+
+      let retryCount = getRetryCount(msg);
+      retryCount++;
+
+      const newHeaders = { ...msg.properties.headers, 'x-retry-count': retryCount };
+
+      if (retryCount > ENV.RETRY_THRESHOLD) {
+        console.log("Retry threshold exceeded; sending message to poison queue");
+
+        channel.publish('ex.last-hope', '', msg.content, {
+          persistent: true,
+          headers: newHeaders,
+        });
+      } else {
+        //
+      }
       channel.reject(msg, false);
     }
   }, { consumerTag: CONSUMER_TAG, noAck: false })

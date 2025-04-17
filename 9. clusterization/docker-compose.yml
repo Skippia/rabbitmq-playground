@@ -10,6 +10,8 @@ services:
       - rabbitmq1
       - rabbitmq2
       - rabbitmq3
+    networks:
+      - rabbitmq-share-net
 
   rabbitmq-external:
     image: rabbitmq:3-management-alpine
@@ -24,6 +26,8 @@ services:
       - ./rabbitmq-external:/var/lib/rabbitmq
     ports:
       - 15675:15672
+    networks:
+      - rabbitmq-share-net
 
   rabbitmq1:
     image: rabbitmq:3-management-alpine
@@ -40,6 +44,8 @@ services:
       - ./rabbitmq_enabled_plugins:/etc/rabbitmq/enabled_plugins
     ports:
       - 15672:15672
+    networks:
+      - rabbitmq-share-net
 
   rabbitmq2:
     image: rabbitmq:3-management-alpine
@@ -56,6 +62,8 @@ services:
       - ./rabbitmq_enabled_plugins:/etc/rabbitmq/enabled_plugins
     ports:
       - 15673:15672
+    networks:
+      - rabbitmq-share-net
 
   rabbitmq3:
     image: rabbitmq:3-management-alpine
@@ -72,3 +80,9 @@ services:
       - ./rabbitmq_enabled_plugins:/etc/rabbitmq/enabled_plugins
     ports:
       - 15674:15672
+    networks:
+      - rabbitmq-share-net
+
+networks:
+  rabbitmq-share-net:
+    external: true

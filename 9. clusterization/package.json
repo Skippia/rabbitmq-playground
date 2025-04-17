@@ -1,0 +1,44 @@
+{
+  "name": "rabbitmq-dlx-delay",
+  "type": "module",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "clusterize": "cat ./scripts/1.join-cluster.sh | docker exec -i rabbitmq2 sh && cat ./scripts/1.join-cluster.sh | docker exec -i rabbitmq3 sh",
+    "setup-shovel": "cat ./scripts/3.add-shovel-external.sh | docker exec -i rabbitmq-external sh && dotenv -e ./external-publisher/.env -- envsubst < ./scripts/4.add-shovel-cluster.sh | docker exec -i rabbitmq1 sh",
+    "-----------------------------------------------------------": "",
+    "backup:schema:rabbitmq-external": "docker exec -i rabbitmq-external sh -c 'rabbitmqadmin -u rmuser -p rmpassword export var/lib/rabbitmq/schema.json'",
+    "backup:schema:rabbitmq-cluster": "docker exec -i rabbitmq1 sh -c 'rabbitmqadmin -u rmuser -p rmpassword export var/lib/rabbitmq/schema.json'",
+    "restore:schema": "",
+    "backup:data:rabbitmq-external": "",
+    "backup:data:rabbitmq-cluster": "",
+    "restore:data": "",
+    "------------------------------------------------------------": "",
+    "start": "tsx ./index.ts",
+    "docker": "docker-compose up -d && sleep 15 && npm run clusterize && npm run setup-shovel && docker-compose -f ./external-publisher/docker-compose.yml up",
+    "clean": "npm run clean:containers && npm run clean:volumes",
+    "clean:containers": "docker rm rabbitmq1 -f && docker rm rabbitmq2 -f && docker rm rabbitmq3 -f && docker rm rabbitmq-external -f",
+    "clean:volumes": "sudo rm -rf ./rabbitmq-1 && sudo rm -rf ./rabbitmq-2 && sudo rm -rf ./rabbitmq-3 && sudo rm -rf ./rabbitmq-external"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/amqplib": "^0.10.5",
+    "@types/node": "^20.12.7",
+    "@typescript-eslint/eslint-plugin": "^5.59.9",
+    "@typescript-eslint/parser": "^5.59.9",
+    "dotenv-cli": "^8.0.0",
+    "eslint": "^8.42.0",
+    "eslint-config-prettier": "^8.8.0",
+    "eslint-import-resolver-typescript": "^3.6.1",
+    "eslint-plugin-import": "^2.29.1",
+    "eslint-plugin-prettier": "^4.2.1",
+    "prettier": "^2.8.8",
+    "tsx": "^4.19.3",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "amqplib": "^0.10.4",
+    "yargs": "^17.7.2"
+  }
+}

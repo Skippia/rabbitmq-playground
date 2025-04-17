@@ -1,10 +1,8 @@
-version: "3.8"
-
 services:
   consumer:
     build:
       context: ..
-      dockerfile: ./consumer/Dockerfile
+      dockerfile: ./1.consumer/Dockerfile
     restart: on-failure:5
     # depends_on:
     #   rabbitmq:

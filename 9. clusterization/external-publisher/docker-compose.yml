@@ -1,0 +1,22 @@
+services:
+  publisher:
+    build:
+      context: ..
+      dockerfile: ./external-publisher/Dockerfile
+    restart: on-failure:5
+    # depends_on:
+    #   rabbitmq:
+    #     condition: service_healthy
+    # links: 
+    #   - rabbitmq
+    volumes:
+      - ./index.ts:/usr/src/app/index.ts
+      - ../node_modules:/usr/src/app/node_modules
+    env_file:
+      - .env
+    networks:
+      - rabbitmq-share-net
+
+networks:
+  rabbitmq-share-net:
+    external: true

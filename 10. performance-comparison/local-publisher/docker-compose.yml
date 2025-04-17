@@ -24,7 +24,7 @@ services:
     build:
       context: ..
       dockerfile: ./local-publisher/Dockerfile
-    restart: on-failure:5
+    restart: no
     hostname: rabbitmq-external
     depends_on:
       rabbitmq:
@@ -33,6 +33,7 @@ services:
       - rabbitmq
     volumes:
       - ./index.ts:/usr/src/app/index.ts
+      - ./reliable-publisher.ts:/usr/src/app/reliable-publisher.ts
       - ../node_modules:/usr/src/app/node_modules
     env_file:
       - .env

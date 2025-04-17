@@ -1,8 +1,8 @@
 docker-compose -f ./local-publisher/docker-compose.yml up rabbitmq -d \
-  && sleep 5 \
+  && sleep 10 \
   && dotenv -e ./1.consumer-single/.env -- envsubst < ./1.consumer-single/init.sh | docker exec -i rabbitmq sh \
   && docker exec -it rabbitmq rabbitmqctl set_policy orders_queue_min "^q.external" \
-    '{"max-length": 1, "overflow": "reject-publish"}' \
+    '{"max-length": 10000, "overflow": "reject-publish"}' \
     --priority 1 \
     --apply-to queues \
   && docker-compose -f ./local-publisher/docker-compose.yml up publisher \

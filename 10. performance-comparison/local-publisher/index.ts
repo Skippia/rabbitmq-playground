@@ -1,6 +1,7 @@
-import amqp from 'amqplib';
 import process from 'node:process';
 import { ReliablePublisher } from './reliable-publisher';
+import amqp from 'amqplib';
+
 
 const ENV = {
   USERNAME: process.env.TO_USERNAME || 'rmuser',
@@ -19,25 +20,28 @@ async function gen(reliablePublisher: ReliablePublisher) {
   console.log('total count:', ENV.COUNT)
 
   for (let count = 1; count <= ENV.COUNT; count++) {
-    const body = Buffer.from((count * Math.random()).toString());
-    reliablePublisher.sendToQueue(ENV.TO_QUEUE, body)
+    if (count % 1000 === 0) {
+      console.log('count:', count)
+    }
+    const body = Buffer.from((count).toString());
+    await reliablePublisher.publish(ENV.TO_QUEUE, body)
   }
 
   console.log('Bye-bye!')
 }
 
 (async () => {
-  const connection = await amqp.connect(uriTo);
+  const connection = await amqp.connect(uriTo)
   const reliablePublisher = new ReliablePublisher(connection)
   await reliablePublisher.initialize()
 
   try {
     console.log('Starting...');
-
+    const start = Date.now();
     await gen(reliablePublisher);
+    console.log('Messages per sec:', ENV.COUNT / ((Date.now() - start) / 1000));
 
   } catch (err) {
-    await connection.close();
     console.error('Fatal error:', err);
     process.exit(1);
   }

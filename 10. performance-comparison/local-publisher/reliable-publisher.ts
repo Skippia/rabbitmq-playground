@@ -1,165 +1,150 @@
-import amqp from 'amqplib';
-import { ok } from 'assert';
+import * as amqp from 'amqplib';
+import { EventEmitter } from 'events';
 import { setTimeout } from 'timers/promises';
 
-interface DeliveryOptions {
-  deliveryTag: number,
-  multiple: boolean,
-  requeue: true
-}
-
-interface OutstandingMessage {
+interface PendingMessage {
   body: Buffer;
   queue: string;
   options: amqp.Options.Publish;
-  retried: number;
-  createdAt: Date;
+  retries: number;
+  timestamp: number;
 }
 
-export class ReliablePublisher {
-  private dlxExchange = "ex.last-hope.dlx";
-  private dlxQueue = "q.last-hope.dlx";
-  private channel: amqp.ConfirmChannel;
-  private outstanding = new Map<number, OutstandingMessage>();
-  private pendingQueue: OutstandingMessage[] = [];
-  private readonly MAX_RETRIES = 1;
+interface DeliveryOptions {
+  deliveryTag: number, multiple: boolean, requeue: boolean
+}
 
-  constructor(private connection: amqp.ChannelModel) { }
+export class ReliablePublisher extends EventEmitter {
+  private channel: amqp.ConfirmChannel;
+  private outstanding = new Map<number, PendingMessage>();
+  private sequence = 0;
+  private readonly MAX_RETRIES = 3;
+  private readonly RETRY_DELAYS = [1000, 2000, 4000];
+  private isReady = false;
+
+  constructor(private connection: amqp.ChannelModel) {
+    super();
+  }
 
   async initialize() {
     this.channel = await this.connection.createConfirmChannel();
-    this._setupListeners();
-    await this._initDLX();
+    this.setupListeners();
+    await this.configureDlx();
+    this.isReady = true;
   }
 
-  async _initDLX() {
-    await this.channel.assertExchange(this.dlxExchange, 'fanout', { durable: true });
-    await this.channel.assertQueue(this.dlxQueue, { durable: true });
-    await this.channel.bindQueue(this.dlxQueue, this.dlxExchange, "");
+  private async configureDlx() {
+    await this.channel.assertExchange('ex.last-hope.dlx', 'fanout', { durable: true });
+    await this.channel.assertQueue('q.last-hope.dlx', { durable: true });
+    await this.channel.bindQueue('q.last-hope.dlx', 'ex.last-hope.dlx', '');
   }
 
-  private _setupListeners() {
-    this.channel.on('ack', async (options: DeliveryOptions) => {
-      console.log('ack event', options);
-      this._handleConfirmation(options.deliveryTag, options.multiple, 'ack');
+  private setupListeners() {
+    this.channel
+      .on('ack', (options: DeliveryOptions) => this.handleConfirm(options.deliveryTag, options.multiple, 'ack'))
+      .on('nack', (options: DeliveryOptions) => this.handleConfirm(options.deliveryTag, options.multiple, 'nack'))
+      .on('close', () => this.handleChannelClose())
+      .on('error', (err) => this.emit('error', err));
+  }
+
+  async publish(queue: string, body: Buffer): Promise<void> {
+    if (!this.isReady) throw new Error('Publisher not initialized');
+
+    const seq = ++this.sequence;
+    this.outstanding.set(seq, {
+      body,
+      queue,
+      options: { deliveryMode: 2 },
+      retries: 0,
+      timestamp: Date.now()
     });
 
-    this.channel.on('nack', async (options: DeliveryOptions) => {
-      console.log('nack event', options);
-      this._handleConfirmation(options.deliveryTag, options.multiple, 'nack');
-    });
 
-    this.channel.on('close', () => {
-      this._handleChannelClose();
-    });
-
-  }
-
-   async _handleConfirmation(
-    deliveryTag: number,
-    multiple: boolean,
-    type: 'ack' | 'nack'
-  ) {
-    const message = this.pendingQueue.shift();
-
-    if (message) {
-      this.outstanding.set(deliveryTag, message);
-    }
-    // Get either one / multiple confirmed or one / multiple NACK-ed messages 
-    // => remove them from local store or try to re-publish them all
-    const confirmed = multiple
-      ? Array.from(this.outstanding.keys())
-        .filter(k => k <= deliveryTag) 
-        .map(k => ({ seq: k, msg: this.outstanding.get(k)! }))
-      : [{ seq: deliveryTag, msg: this.outstanding.get(deliveryTag)! }];
-
-
-      console.log('confirmed', confirmed.map(({ seq, msg }) => ({ seq, body: msg?.body.toString() || null })))
-
-    confirmed.forEach(async ({ seq, msg }) => {
-      if (type === 'nack') {
-        this._handleNack(msg);
-      }
-      this.outstanding.delete(seq);
-    })
-  }
-
-  private async _handleNack(message: OutstandingMessage) {
-    console.log("Message was NACKed, its retried = ", message.retried, '...');
-
-    if (message.retried >= this.MAX_RETRIES) {
-      console.log("Message", message.body.toString(), "will be delivered to DLX")
-      this._moveToDeadLetter(message);
-      console.log('============================================');
-      return;
-    }
-
-    console.log("Message", message.body.toString(), "will be re-published")
-    console.log('============================================');
-
-    const isSent = this.sendToQueue(
-      message.queue,
-      message.body,
-      {
-        ...message.options,
-        headers: {
-          ...message.options.headers,
-          'x-retry-count': message.retried + 1
-        }
-      },
-      message.retried + 1
-    );
+    const isSent = this.channel.sendToQueue(
+      queue,
+      body,
+      { deliveryMode: 2 },
+    )
 
     if (!isSent) {
-      console.log("Message not sent, waits for drain event...");
+      console.log('Message not sent, waits for drain event...');
       await new Promise(resolve => this.channel.once('drain', resolve));
     }
   }
 
+  private handleConfirm(sequence: number, multiple: boolean, type: 'ack' | 'nack') {
+    const confirmed = this.getConfirmedSequences(sequence, multiple);
 
-  sendToQueue(
-    queue: string,
-    body: Buffer,
-    options: amqp.Options.Publish = { deliveryMode: 2 },
-    retried?: number
-  ) {
-    this.pendingQueue.push({
-      queue,
-      body,
-      options,
-      retried: retried ?? 0,
-      createdAt: new Date()
+    confirmed.forEach(seq => {
+      const message = this.outstanding.get(seq);
+
+      if (!message) return;
+
+      if (type === 'nack') this.handleNack(seq, message);
+      this.outstanding.delete(seq);
     });
-
-
-    return this.channel.sendToQueue(queue, body, options)
   }
 
-  private _moveToDeadLetter(message: OutstandingMessage) {
-    this.channel.publish(
-      this.dlxExchange,
-      "",
-      message.body,
-      {
-        ...message.options,
-        headers: {
-          ...message.options.headers,
-          'dead-letter-reason': 'max_retries_exceeded'
+  private getConfirmedSequences(sequence: number, multiple: boolean): number[] {
+    if (multiple) {
+      return Array.from(this.outstanding.keys())
+        .filter(k => k <= sequence)
+        .sort((a, b) => a - b);
+    }
+    return [sequence];
+  }
+
+  private async handleNack(seq: number, message: PendingMessage) {
+    if (message.retries >= this.MAX_RETRIES) {
+      this.moveToDlx(message);
+      return;
+    }
+
+    await this.retryWithBackoff(seq, message);
+  }
+
+  private async retryWithBackoff(seq: number, message: PendingMessage) {
+    // console.log(`Retrying message ${seq} after ${this.RETRY_DELAYS[message.retries]} ms...`);
+    await setTimeout(this.RETRY_DELAYS[message.retries]);
+
+    try {
+      const newSeq = ++this.sequence;
+
+      await this.publish(message.queue, message.body);
+
+      this.outstanding.set(newSeq, {
+        ...message,
+        retries: message.retries + 1
+      });
+    } catch (err: any) {
+      console.log(`Retry failed for message ${seq}: ${err.message}`);
+    }
+  }
+
+  private moveToDlx(message: PendingMessage) {
+    try {
+      this.channel.publish(
+        'ex.last-hope.dlx',
+        '',
+        message.body,
+        {
+          ...message.options,
+          headers: {
+            ...message.options.headers,
+            'x-death-reason': 'max_retries',
+            'x-original-queue': message.queue
+          }
         }
-      }
-    );
+      );
+    } catch (err) {
+      console.log('error', new Error(`DLX publish failed: ${(err as Error).message}`));
+    }
   }
 
-  private _handleChannelClose() {
-    // // Re-publish all outstanding messages
-    // this.outstanding.forEach(msg => {
-    //   this.publish(msg.body, msg.exchange, msg.routingKey, msg.options, msg.retries)
-    //     .catch(err => console.error('Failed to republish message:', err));
-    // });
-    // this.outstanding.clear();
+  private handleChannelClose() {
   }
 
   async close() {
-    await this.channel.close();
+    if (this.channel) await this.channel.close();
   }
 }

@@ -16,9 +16,10 @@ services:
     volumes:
       - ../rabbitmq_enabled_plugins:/etc/rabbitmq/enabled_plugins
     ports:
+      - 5672:5672
       - 15672:15672
-    networks:
-      - rabbitmq-share-net
+    # networks:
+    #   - rabbitmq-share-net
 
   publisher:
     build:
@@ -34,11 +35,12 @@ services:
     volumes:
       - ./index.ts:/usr/src/app/index.ts
       - ./reliable-publisher.ts:/usr/src/app/reliable-publisher.ts
+      - ./backpressure-manager.ts:/usr/src/app/backpressure-manager.ts
       - ../node_modules:/usr/src/app/node_modules
     env_file:
       - .env
-    networks:
-      - rabbitmq-share-net
+    # networks:
+    #   - rabbitmq-share-net
 
 networks:
   rabbitmq-share-net:

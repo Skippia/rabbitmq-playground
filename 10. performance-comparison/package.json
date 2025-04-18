@@ -16,7 +16,7 @@
     "------------------------------------------------------------": "",
     "1.consumer-single-start": "./1.consumer-single-start.sh",
     "-------------------------------------------------------------": "",
-    "start": "tsx ./index.ts",
+    "start": "clinic doctor -- tsx ./index.ts",
     "docker": "docker-compose up -d && sleep 15 && npm run clusterize && npm run setup-shovel && docker-compose -f ./external-publisher/docker-compose.yml up",
     "clean": "npm run clean:containers && npm run clean:volumes",
     "clean:containers": "docker rm rabbitmq1 -f && docker rm rabbitmq2 -f && docker rm rabbitmq3 -f && docker rm rabbitmq-external -f",
@@ -41,6 +41,7 @@
   },
   "dependencies": {
     "amqplib": "^0.10.4",
+    "clinic": "^13.0.0",
     "yargs": "^17.7.2"
   }
 }

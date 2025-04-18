@@ -21,7 +21,7 @@ async function gen(reliablePublisher: ReliablePublisher) {
 
   for (let count = 1; count <= ENV.COUNT; count++) {
     if (count % 10000 === 0) {
-      console.log('count:', count)
+      // console.log('count:', count)
     }
     const body = Buffer.from((count).toString());
     await reliablePublisher.publish(ENV.TO_QUEUE, body)

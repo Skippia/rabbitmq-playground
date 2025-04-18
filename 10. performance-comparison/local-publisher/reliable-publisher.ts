@@ -1,5 +1,5 @@
 import * as amqp from 'amqplib';
-import { BackpressureManager } from './backpressure-manager'; 
+import { BackpressureManager } from './backpressure-manager';
 
 export class ReliablePublisher {
   private channel!: amqp.ConfirmChannel;
@@ -15,18 +15,16 @@ export class ReliablePublisher {
     private connection: amqp.ChannelModel,
     options?: { batchSize?: number; maxRetries?: number; maxConcurrentHandlers?: number }
   ) {
-    this.BATCH_SIZE = options?.batchSize ?? 2;
+    this.BATCH_SIZE = options?.batchSize ?? 100;
     this.MAX_RETRIES = options?.maxRetries ?? 2;
 
     // Initialize the BackpressureManager with the maxConcurrentHandlers option
     this.backpressureManager = new BackpressureManager(
-      options?.maxConcurrentHandlers ?? 1
+      options?.maxConcurrentHandlers ?? 10,
+      this.MAX_RETRIES
     );
   }
 
-  /**
-   * Initialize confirm channel and DLX topology.
-   */
   async init(): Promise<void> {
     this.channel = await this.connection.createConfirmChannel();
     this.channelDLX = await this.connection.createConfirmChannel();
@@ -35,16 +33,14 @@ export class ReliablePublisher {
     await this.channelDLX.bindQueue(this.DLX_Q, this.DLX_EX, '');
   }
 
-  /**
-   * Buffer and batch-send messages. Flushes when buffer reaches batchSize.
-   */
   async publish(queue: string, body: Buffer): Promise<void> {
     this.buffer.push(body);
 
     if (this.buffer.length >= this.BATCH_SIZE) {
-      await this.backpressureManager.acquireSlot(); // Wait until a slot is available
+      await this.backpressureManager.acquireSlot('primary');
+
       this.flush(queue, this.buffer.splice(0, this.BATCH_SIZE))
-        .finally(() => this.backpressureManager.releaseSlot()); // Always release slot
+        .finally(() => this.backpressureManager.releaseSlot('primary'));
     }
   }
 
@@ -70,9 +66,13 @@ export class ReliablePublisher {
         // 3a. Exponential backoff delay
         const delay = 1000 * 2 ** retryCount;
 
-        setTimeout(() => {
-          this.flush(queue, batch, retryCount + 1);
+        setTimeout(async () => {
+          await this.backpressureManager.acquireSlot('retry');
+          await this.flush(queue, batch, retryCount + 1)
+            .finally(() => this.backpressureManager.releaseSlot('retry'));
         }, delay)
+
+
       } else {
         try {
           // 4. Route to DLX after exhausting retries

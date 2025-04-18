@@ -1,44 +1,66 @@
 export class BackpressureManager {
-  private activeHandlers = 0; // Number of active handlers
+  private maxConcurrentHandlers: number
+  private maxPrimaryHandlers: number
+  private maxRetryHandlers: number
+
+  private primaryHandlers = 0;
+  private retryHandlers = 0;
+
   private waitingResolvers: (() => void)[] = []; // Queue of waiting promises
 
-  constructor(private readonly maxConcurrentHandlers: number) {}
+
+  constructor(maxConcurrentHandlers: number, retries: number) {
+    this.maxConcurrentHandlers = maxConcurrentHandlers
+    this.maxPrimaryHandlers = Math.floor(maxConcurrentHandlers / (1 + retries))
+    this.maxRetryHandlers = this.maxConcurrentHandlers - this.maxPrimaryHandlers
+
+    console.dir({
+      maxConcurrentHandlers: this.maxConcurrentHandlers,
+      maxPrimaryHandlers: this.maxPrimaryHandlers,
+    })
+  }
 
   /**
    * Acquire a slot for concurrent operations.
    * If no slots are available, waits until one becomes free.
    */
-  async acquireSlot(): Promise<void> {
-    if (this.activeHandlers >= this.maxConcurrentHandlers) {
-      await new Promise<void>((resolve) => this.waitingResolvers.push(resolve));
+  async acquireSlot(mode: 'primary' | 'retry'): Promise<void> {
+    if (mode === 'primary') {
+      // console.log('primary handlers:', this.primaryHandlers, this.maxPrimaryHandlers)
+
+      if (this.primaryHandlers >= this.maxPrimaryHandlers) {
+        await new Promise<void>((resolve) => this.waitingResolvers.push(resolve));
+      }
+      this.primaryHandlers++
     }
-    this.activeHandlers++;
+
+    else if (mode === 'retry') {
+      // console.log('retry handlers:', this.retryHandlers, this.maxRetryHandlers)
+
+      if (this.retryHandlers >= this.maxRetryHandlers) {
+        await new Promise<void>((resolve) => this.waitingResolvers.push(resolve));
+      }
+      this.retryHandlers++
+    }
+
   }
 
   /**
    * Release a slot and notify any waiting promises.
    */
-  releaseSlot(): void {
-    this.activeHandlers--;
+  releaseSlot(mode: 'primary' | 'retry'): void {
+    if (mode === 'primary') {
+      this.primaryHandlers--;
+    }
 
-    // Notify the next waiting resolver, if any
+    if (mode === 'retry') {
+      this.retryHandlers--;
+    }
+
+
     if (this.waitingResolvers.length > 0) {
       const resolve = this.waitingResolvers.shift()!;
       resolve();
     }
-  }
-
-  /**
-   * Get the current number of active handlers.
-   */
-  getActiveHandlers(): number {
-    return this.activeHandlers;
-  }
-
-  /**
-   * Get the number of tasks currently waiting for a slot.
-   */
-  getWaitingCount(): number {
-    return this.waitingResolvers.length;
   }
 }

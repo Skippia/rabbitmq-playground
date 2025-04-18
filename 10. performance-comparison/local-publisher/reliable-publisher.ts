@@ -18,8 +18,8 @@ export class ReliablePublisher extends EventEmitter {
   private channel: amqp.ConfirmChannel;
   private outstanding = new Map<number, PendingMessage>();
   private sequence = 0;
-  private readonly MAX_RETRIES = 3;
-  private readonly RETRY_DELAYS = [1000, 2000, 4000];
+  private readonly MAX_RETRIES = 1;
+  private readonly RETRY_DELAYS = [1000];
   private isReady = false;
 
   constructor(private connection: amqp.ChannelModel) {
@@ -67,8 +67,13 @@ export class ReliablePublisher extends EventEmitter {
     )
 
     if (!isSent) {
-      console.log('Message not sent, waits for drain event...');
-      await new Promise(resolve => this.channel.once('drain', resolve));
+      // console.log('Message not sent, waits for drain event...');
+      await new Promise<void>(resolve => this.channel.once('drain', 
+        async () => {
+          await setTimeout()
+          resolve()
+        }
+      ));
     }
   }
 
@@ -117,7 +122,7 @@ export class ReliablePublisher extends EventEmitter {
         retries: message.retries + 1
       });
     } catch (err: any) {
-      console.log(`Retry failed for message ${seq}: ${err.message}`);
+      // console.log(`Retry failed for message ${seq}: ${err.message}`);
     }
   }
 

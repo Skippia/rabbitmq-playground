@@ -20,7 +20,7 @@ async function gen(reliablePublisher: ReliablePublisher) {
   console.log('total count:', ENV.COUNT)
 
   for (let count = 1; count <= ENV.COUNT; count++) {
-    if (count % 1000 === 0) {
+    if (count % 10000 === 0) {
       console.log('count:', count)
     }
     const body = Buffer.from((count).toString());
@@ -33,7 +33,7 @@ async function gen(reliablePublisher: ReliablePublisher) {
 (async () => {
   const connection = await amqp.connect(uriTo)
   const reliablePublisher = new ReliablePublisher(connection)
-  await reliablePublisher.initialize()
+  await reliablePublisher.init()
 
   try {
     console.log('Starting...');

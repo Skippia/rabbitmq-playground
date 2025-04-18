@@ -1,155 +1,101 @@
 import * as amqp from 'amqplib';
-import { EventEmitter } from 'events';
-import { setTimeout } from 'timers/promises';
 
-interface PendingMessage {
-  body: Buffer;
-  queue: string;
-  options: amqp.Options.Publish;
-  retries: number;
-  timestamp: number;
-}
+/**
+ * Accumulating publisher that batches confirms in fixed-size groups with
+ * retry (with exponential backoff) and DLX dead-lettering logic.
+ */
+export class ReliablePublisher {
+  private channel!: amqp.ConfirmChannel;
+  private channelDLX!: amqp.ConfirmChannel;
+  private buffer: Buffer[] = [];
+  private readonly BATCH_SIZE: number;
+  private readonly MAX_RETRIES: number;
+  private readonly DLX_EX = 'ex.last-hope.dlx';
+  private readonly DLX_Q = 'q.last-hope.dlx';
 
-interface DeliveryOptions {
-  deliveryTag: number, multiple: boolean, requeue: boolean
-}
-
-export class ReliablePublisher extends EventEmitter {
-  private channel: amqp.ConfirmChannel;
-  private outstanding = new Map<number, PendingMessage>();
-  private sequence = 0;
-  private readonly MAX_RETRIES = 1;
-  private readonly RETRY_DELAYS = [1000];
-  private isReady = false;
-
-  constructor(private connection: amqp.ChannelModel) {
-    super();
+  constructor(
+    private connection: amqp.ChannelModel,
+    options?: { batchSize?: number; maxRetries?: number }
+  ) {
+    this.BATCH_SIZE = options?.batchSize ?? 100;
+    this.MAX_RETRIES = options?.maxRetries ?? 2;
   }
 
-  async initialize() {
+  /**
+   * Initialize confirm channel and DLX topology.
+   */
+  async init(): Promise<void> {
     this.channel = await this.connection.createConfirmChannel();
-    this.setupListeners();
-    await this.configureDlx();
-    this.isReady = true;
+    this.channelDLX = await this.connection.createConfirmChannel();
+    await this.channelDLX.assertExchange(this.DLX_EX, 'fanout', { durable: true });
+    await this.channelDLX.assertQueue(this.DLX_Q, { durable: true });
+    await this.channelDLX.bindQueue(this.DLX_Q, this.DLX_EX, '');
   }
 
-  private async configureDlx() {
-    await this.channel.assertExchange('ex.last-hope.dlx', 'fanout', { durable: true });
-    await this.channel.assertQueue('q.last-hope.dlx', { durable: true });
-    await this.channel.bindQueue('q.last-hope.dlx', 'ex.last-hope.dlx', '');
-  }
-
-  private setupListeners() {
-    this.channel
-      .on('ack', (options: DeliveryOptions) => this.handleConfirm(options.deliveryTag, options.multiple, 'ack'))
-      .on('nack', (options: DeliveryOptions) => this.handleConfirm(options.deliveryTag, options.multiple, 'nack'))
-      .on('close', () => this.handleChannelClose())
-      .on('error', (err) => this.emit('error', err));
-  }
-
+  /**
+   * Buffer and batch-send messages. Flushes when buffer reaches batchSize.
+   */
   async publish(queue: string, body: Buffer): Promise<void> {
-    if (!this.isReady) throw new Error('Publisher not initialized');
+    this.buffer.push(body);
 
-    const seq = ++this.sequence;
-    this.outstanding.set(seq, {
-      body,
-      queue,
-      options: { deliveryMode: 2 },
-      retries: 0,
-      timestamp: Date.now()
-    });
-
-
-    const isSent = this.channel.sendToQueue(
-      queue,
-      body,
-      { deliveryMode: 2 },
-    )
-
-    if (!isSent) {
-      // console.log('Message not sent, waits for drain event...');
-      await new Promise<void>(resolve => this.channel.once('drain', 
-        async () => {
-          await setTimeout()
-          resolve()
-        }
-      ));
+    if (this.buffer.length >= this.BATCH_SIZE) {
+      await this.flush(queue, this.buffer.splice(0, this.BATCH_SIZE));
     }
   }
 
-  private handleConfirm(sequence: number, multiple: boolean, type: 'ack' | 'nack') {
-    const confirmed = this.getConfirmedSequences(sequence, multiple);
+  /**
+   * Flush buffered messages: send batch, await confirms, retry with backoff,
+   * and route to DLX if max retries exceeded.
+   */
+  private async flush(queue: string, batch: Buffer<ArrayBufferLike>[], retryCount = 0): Promise<void> {
+    // 1. Send all messages without per-message awaits
+    for (const body of batch) {
+      const ok = this.channel.sendToQueue(queue, body, { deliveryMode: 2 });
 
-    confirmed.forEach(seq => {
-      const message = this.outstanding.get(seq);
-
-      if (!message) return;
-
-      if (type === 'nack') this.handleNack(seq, message);
-      this.outstanding.delete(seq);
-    });
-  }
-
-  private getConfirmedSequences(sequence: number, multiple: boolean): number[] {
-    if (multiple) {
-      return Array.from(this.outstanding.keys())
-        .filter(k => k <= sequence)
-        .sort((a, b) => a - b);
+      if (!ok) {
+        await new Promise<void>(resolve => this.channel.once('drain', resolve));
+      }
     }
-    return [sequence];
-  }
-
-  private async handleNack(seq: number, message: PendingMessage) {
-    if (message.retries >= this.MAX_RETRIES) {
-      this.moveToDlx(message);
-      return;
-    }
-
-    await this.retryWithBackoff(seq, message);
-  }
-
-  private async retryWithBackoff(seq: number, message: PendingMessage) {
-    // console.log(`Retrying message ${seq} after ${this.RETRY_DELAYS[message.retries]} ms...`);
-    await setTimeout(this.RETRY_DELAYS[message.retries]);
 
     try {
-      const newSeq = ++this.sequence;
-
-      await this.publish(message.queue, message.body);
-
-      this.outstanding.set(newSeq, {
-        ...message,
-        retries: message.retries + 1
-      });
-    } catch (err: any) {
-      // console.log(`Retry failed for message ${seq}: ${err.message}`);
-    }
-  }
-
-  private moveToDlx(message: PendingMessage) {
-    try {
-      this.channel.publish(
-        'ex.last-hope.dlx',
-        '',
-        message.body,
-        {
-          ...message.options,
-          headers: {
-            ...message.options.headers,
-            'x-death-reason': 'max_retries',
-            'x-original-queue': message.queue
-          }
-        }
-      );
+      // 2. Await batch confirms
+      await this.channel.waitForConfirms();
+      // Clean buffer
     } catch (err) {
-      console.log('error', new Error(`DLX publish failed: ${(err as Error).message}`));
+      if (retryCount < this.MAX_RETRIES) {
+        // 3a. Exponential backoff delay
+        const delay = 1000 * 2 ** retryCount;
+
+        // 3b. Retry current batch after delay in non-blocking manner
+        setTimeout(() => {
+          this.flush(queue, batch, retryCount + 1);
+        }, delay)
+      } else {
+        try {
+          // 4. Route to DLX after exhausting retries
+          for (const body of batch) {
+            const ok = this.channelDLX.publish(
+              this.DLX_EX,
+              '',
+              body,
+              {
+                deliveryMode: 2,
+              }
+            );
+
+
+            if (!ok) {
+              await new Promise<void>(resolve => this.channelDLX.once('drain', resolve));
+            }
+          };
+          await this.channelDLX.waitForConfirms();
+
+        } catch (err) {
+          console.log('send to dlx error', (err as Error).message)
+        }
+
+      }
+
     }
-  }
-
-  private handleChannelClose() {
-  }
-
-  async close() {
-    if (this.channel) await this.channel.close();
   }
 }

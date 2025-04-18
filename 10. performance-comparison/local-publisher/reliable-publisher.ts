@@ -1,9 +1,6 @@
 import * as amqp from 'amqplib';
+import { BackpressureManager } from './backpressure-manager'; 
 
-/**
- * Accumulating publisher that batches confirms in fixed-size groups with
- * retry (with exponential backoff) and DLX dead-lettering logic.
- */
 export class ReliablePublisher {
   private channel!: amqp.ConfirmChannel;
   private channelDLX!: amqp.ConfirmChannel;
@@ -12,13 +9,19 @@ export class ReliablePublisher {
   private readonly MAX_RETRIES: number;
   private readonly DLX_EX = 'ex.last-hope.dlx';
   private readonly DLX_Q = 'q.last-hope.dlx';
+  private readonly backpressureManager: BackpressureManager;
 
   constructor(
     private connection: amqp.ChannelModel,
-    options?: { batchSize?: number; maxRetries?: number }
+    options?: { batchSize?: number; maxRetries?: number; maxConcurrentHandlers?: number }
   ) {
-    this.BATCH_SIZE = options?.batchSize ?? 100;
+    this.BATCH_SIZE = options?.batchSize ?? 2;
     this.MAX_RETRIES = options?.maxRetries ?? 2;
+
+    // Initialize the BackpressureManager with the maxConcurrentHandlers option
+    this.backpressureManager = new BackpressureManager(
+      options?.maxConcurrentHandlers ?? 1
+    );
   }
 
   /**
@@ -39,7 +42,9 @@ export class ReliablePublisher {
     this.buffer.push(body);
 
     if (this.buffer.length >= this.BATCH_SIZE) {
-      await this.flush(queue, this.buffer.splice(0, this.BATCH_SIZE));
+      await this.backpressureManager.acquireSlot(); // Wait until a slot is available
+      this.flush(queue, this.buffer.splice(0, this.BATCH_SIZE))
+        .finally(() => this.backpressureManager.releaseSlot()); // Always release slot
     }
   }
 
@@ -47,26 +52,24 @@ export class ReliablePublisher {
    * Flush buffered messages: send batch, await confirms, retry with backoff,
    * and route to DLX if max retries exceeded.
    */
-  private async flush(queue: string, batch: Buffer<ArrayBufferLike>[], retryCount = 0): Promise<void> {
+  private async flush(queue: string, batch: Buffer[], retryCount = 0): Promise<void> {
     // 1. Send all messages without per-message awaits
     for (const body of batch) {
       const ok = this.channel.sendToQueue(queue, body, { deliveryMode: 2 });
 
       if (!ok) {
-        await new Promise<void>(resolve => this.channel.once('drain', resolve));
+        await new Promise<void>((resolve) => this.channel.once('drain', resolve));
       }
     }
 
     try {
       // 2. Await batch confirms
       await this.channel.waitForConfirms();
-      // Clean buffer
     } catch (err) {
       if (retryCount < this.MAX_RETRIES) {
         // 3a. Exponential backoff delay
         const delay = 1000 * 2 ** retryCount;
 
-        // 3b. Retry current batch after delay in non-blocking manner
         setTimeout(() => {
           this.flush(queue, batch, retryCount + 1);
         }, delay)
@@ -74,28 +77,17 @@ export class ReliablePublisher {
         try {
           // 4. Route to DLX after exhausting retries
           for (const body of batch) {
-            const ok = this.channelDLX.publish(
-              this.DLX_EX,
-              '',
-              body,
-              {
-                deliveryMode: 2,
-              }
-            );
-
+            const ok = this.channelDLX.publish(this.DLX_EX, '', body, { deliveryMode: 2 });
 
             if (!ok) {
-              await new Promise<void>(resolve => this.channelDLX.once('drain', resolve));
+              await new Promise<void>((resolve) => this.channelDLX.once('drain', resolve));
             }
-          };
+          }
           await this.channelDLX.waitForConfirms();
-
         } catch (err) {
-          console.log('send to dlx error', (err as Error).message)
+          console.error('Failed to send to DLX:', (err as Error).message);
         }
-
       }
-
     }
   }
 }

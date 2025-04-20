@@ -13,13 +13,13 @@ services:
       - ./index.ts:/usr/src/app/index.ts
       - ../node_modules:/usr/src/app/node_modules
     environment:
-      TO_USERNAME: "rmuser"
-      TO_PASSWORD: "rmpassword"
-      TO_HOSTNAME: "rabbitmq"
-      TO_PORT: "5672"
-      TO_QUEUE: "inbox"
-      TO_EXCHANGE: "inbox"
-      TO_ROUTINGKEY: "gen"
+      USERNAME: "rmuser"
+      PASSWORD: "rmpassword"
+      HOSTNAME: "rabbitmq"
+      PORT: "5672"
+      QUEUE: "inbox"
+      EXCHANGE: "inbox"
+      ROUTINGKEY: "gen"
       COUNT: "100000"
       SLEEP: "1000"
     networks:

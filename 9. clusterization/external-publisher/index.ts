@@ -4,11 +4,11 @@ import yargs from 'yargs';
 import process from 'node:process';
 
 const ENV = {
-  USERNAME: process.env.TO_USERNAME || 'rmuser',
-  PASSWORD: encodeURIComponent(process.env.TO_PASSWORD || 'rmpassword'),
-  HOSTNAME: process.env.TO_HOSTNAME || 'rabbitmq',
-  PORT: process.env.TO_PORT || '5672',
-  TO_QUEUE: process.env.TO_QUEUE || '',
+  USERNAME: process.env.USERNAME || 'rmuser',
+  PASSWORD: encodeURIComponent(process.env.PASSWORD || 'rmpassword'),
+  HOSTNAME: process.env.HOSTNAME || 'rabbitmq',
+  PORT: process.env.PORT || '5672',
+  QUEUE: process.env.QUEUE || '',
   SLEEP: parseInt(process.env.SLEEP || '0', 10),
   COUNT: parseInt(process.env.COUNT || '100000', 10),
 };
@@ -36,7 +36,7 @@ async function connectTo(): Promise<{ connection: amqp.ChannelModel, channel: Ch
 }
 
 async function publish(channel: Channel, body: Buffer, count: number) {
-  const isSent = channel.sendToQueue(ENV.TO_QUEUE, body, {
+  const isSent = channel.sendToQueue(ENV.QUEUE, body, {
     deliveryMode: 2,
   });
 

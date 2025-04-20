@@ -27,9 +27,9 @@ services:
       dockerfile: ./2.batch-confirmation/Dockerfile
     restart: no
     hostname: publisher
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
+    # depends_on:
+    #   rabbitmq:
+    #     condition: service_healthy
     links: 
       - rabbitmq
     volumes:

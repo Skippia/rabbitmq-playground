@@ -4,13 +4,13 @@ import yargs from 'yargs';
 import process from 'node:process';
 
 const ENV = {
-  USERNAME: process.env.TO_USERNAME || 'rmuser',
-  PASSWORD: encodeURIComponent(process.env.TO_PASSWORD || 'rmpassword'),
-  HOSTNAME: process.env.TO_HOSTNAME || 'rabbitmq',
-  PORT: process.env.TO_PORT || '5672',
-  TO_QUEUE: process.env.TO_QUEUE || '',
-  TO_EXCHANGE: process.env.TO_EXCHANGE || '',
-  ROUTING_KEY: process.env.TO_ROUTINGKEY || '',
+  USERNAME: process.env.USERNAME || 'rmuser',
+  PASSWORD: encodeURIComponent(process.env.PASSWORD || 'rmpassword'),
+  HOSTNAME: process.env.HOSTNAME || 'rabbitmq',
+  PORT: process.env.PORT || '5672',
+  QUEUE: process.env.QUEUE || '',
+  EXCHANGE: process.env.EXCHANGE || '',
+  ROUTING_KEY: process.env.ROUTINGKEY || '',
   SLEEP: parseInt(process.env.SLEEP || '0', 10),
   REPORT: parseInt(process.env.REPORT || '10000', 10),
   COUNT: parseInt(process.env.COUNT || '100000', 10)
@@ -32,7 +32,7 @@ async function connectTo(): Promise<{ connection: amqp.ChannelModel, channel: Ch
   const connection = await amqp.connect(uriTo);
   const channel = await connection.createChannel();
 
-  const q = await channel.checkQueue(`q.${ENV.TO_QUEUE}`);
+  const q = await channel.checkQueue(`q.${ENV.QUEUE}`);
   console.log(`${q.messageCount} messages in queue`);
 
   return { connection, channel };
@@ -46,13 +46,13 @@ async function publish(channel: Channel, body: Buffer) {
   if (random > 90) {
     console.warn('Generate poison message!')
 
-    channel.publish(`ex.${ENV.TO_EXCHANGE}`, 'unknown-key', body, {
+    channel.publish(`ex.${ENV.EXCHANGE}`, 'unknown-key', body, {
       contentType: 'text/plain',
       deliveryMode: 2,
     })
   // Finally will be retried in the same queue
   } else {
-    channel.publish(`ex.${ENV.TO_EXCHANGE}`, routing, body, {
+    channel.publish(`ex.${ENV.EXCHANGE}`, routing, body, {
       contentType: 'text/plain',
       deliveryMode: 2,
     });

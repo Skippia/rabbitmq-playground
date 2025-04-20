@@ -2,8 +2,8 @@ services:
   rabbitmq:
     image: rabbitmq:3-management-alpine
     hostname: rabbitmq
-    container_name: rabbitmq-publisher
     restart: always
+    container_name: rabbitmq-publisher
     healthcheck:
       test: rabbitmq-diagnostics -q ping
       interval: 5s
@@ -14,7 +14,7 @@ services:
       RABBITMQ_DEFAULT_PASS: rmpassword
       RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: -rabbit log_levels [{connection,error},{default,error}] disk_free_limit 2147483648
     volumes:
-      - ../rabbitmq_enabled_plugins:/etc/rabbitmq/enabled_plugins
+      - "../rabbitmq_enabled_plugins:/etc/rabbitmq/enabled_plugins"
     ports:
       - 5672:5672
       - 15672:15672
@@ -24,9 +24,8 @@ services:
   publisher:
     build:
       context: ..
-      dockerfile: ./2.batch-confirmation/Dockerfile
+      dockerfile: ./1.sync-confirmation/Dockerfile
     restart: no
-    hostname: publisher
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -34,8 +33,6 @@ services:
       - rabbitmq
     volumes:
       - ./index.ts:/usr/src/app/index.ts
-      - ./reliable-publisher.ts:/usr/src/app/reliable-publisher.ts
-      - ./backpressure-manager.ts:/usr/src/app/backpressure-manager.ts
       - ../node_modules:/usr/src/app/node_modules
     env_file:
       - .env

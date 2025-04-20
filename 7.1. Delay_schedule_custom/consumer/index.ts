@@ -2,16 +2,15 @@ import amqp, { Connection, Channel, ConsumeMessage, ChannelModel } from 'amqplib
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import process from 'process';
-import { channel } from 'diagnostics_channel';
 
 const ENV = {
-  FROM_USERNAME: process.env.FROM_USERNAME || "rmuser",
-  FROM_PASSWORD: encodeURIComponent(process.env.FROM_PASSWORD || "rmpassword"),
-  FROM_HOSTNAME: process.env.FROM_HOSTNAME || "rabbitmq",
-  FROM_PORT: process.env.FROM_PORT || "5672",
-  FROM_QUEUE: process.env.FROM_QUEUE || "",
-  FROM_EXCHANGE: process.env.FROM_EXCHANGE || "",
-  FROM_ROUTINGKEY: process.env.FROM_ROUTINGKEY || "",
+  USERNAME: process.env.USERNAME || "rmuser",
+  PASSWORD: encodeURIComponent(process.env.PASSWORD || "rmpassword"),
+  HOSTNAME: process.env.HOSTNAME || "rabbitmq",
+  PORT: process.env.PORT || "5672",
+  QUEUE: process.env.QUEUE || "",
+  EXCHANGE: process.env.EXCHANGE || "",
+  ROUTINGKEY: process.env.ROUTINGKEY || "",
   PREFETCH: parseInt(process.env.PREFETCH || "5", 10),
   FAIL: process.env.FAIL || "false",
   REJECTALL: process.env.REJECTALL || "false",
@@ -24,7 +23,7 @@ const ENV = {
 const args = yargs(hideBin(process.argv))
   .option("uriFrom", {
     type: "string",
-    default: `amqp://${ENV.FROM_USERNAME}:${ENV.FROM_PASSWORD}@${ENV.FROM_HOSTNAME}:${ENV.FROM_PORT}/`,
+    default: `amqp://${ENV.USERNAME}:${ENV.PASSWORD}@${ENV.HOSTNAME}:${ENV.PORT}/`,
     describe: "AMQP From URI"
   })
   .option("exchange-type", {
@@ -41,7 +40,6 @@ const args = yargs(hideBin(process.argv))
 
 
 const URI_FROM: string = args.uriFrom;
-const EXCHANGE_TYPE: string = args["exchange-type"];
 const CONSUMER_TAG: string = args["consumer-tag"];
 
 function fatalError(msg: string, err?: any): never {
@@ -56,8 +54,8 @@ async function declareAlternateExchange(channel: Channel) {
 }
 
 async function declareDlxExchanges(channel: Channel) {
-  await channel.assertExchange(`ex.${ENV.FROM_QUEUE}.fail`, "direct", { durable: true });
-  await channel.assertExchange(`ex.${ENV.FROM_QUEUE}.retry`, "direct", { durable: true });
+  await channel.assertExchange(`ex.${ENV.QUEUE}.fail`, "direct", { durable: true });
+  await channel.assertExchange(`ex.${ENV.QUEUE}.retry`, "direct", { durable: true });
 }
 
 async function declareDlxRetryQueue(retryQueueName: string, channel: Channel) {
@@ -66,43 +64,43 @@ async function declareDlxRetryQueue(retryQueueName: string, channel: Channel) {
     autoDelete: false,
     exclusive: false,
     arguments: {
-      "x-dead-letter-exchange": `ex.${ENV.FROM_QUEUE}.retry`,
+      "x-dead-letter-exchange": `ex.${ENV.QUEUE}.retry`,
       "x-message-ttl": ENV.RETRY_QUEUE_TTL,
       'x-dead-letter-routing-key': 'retry',
       'queue-mode': 'lazy'
     }
   });
 
-  await channel.bindQueue(retryQueueName, `ex.${ENV.FROM_QUEUE}.fail`, ENV.FROM_ROUTINGKEY);
-  await channel.bindQueue(retryQueueName, `ex.${ENV.FROM_QUEUE}.fail`, 'retry');
+  await channel.bindQueue(retryQueueName, `ex.${ENV.QUEUE}.fail`, ENV.ROUTINGKEY);
+  await channel.bindQueue(retryQueueName, `ex.${ENV.QUEUE}.fail`, 'retry');
 }
 
 async function declareInboxQueue(channel: Channel): Promise<amqp.Replies.AssertQueue> {
-  const queueInfo = await channel.assertQueue(`q.${ENV.FROM_QUEUE}`, {
+  const queueInfo = await channel.assertQueue(`q.${ENV.QUEUE}`, {
     durable: true, autoDelete: false, exclusive: false,
-    arguments: { "x-dead-letter-exchange": `ex.${ENV.FROM_QUEUE}.fail` }
+    arguments: { "x-dead-letter-exchange": `ex.${ENV.QUEUE}.fail` }
   })
 
-  await channel.bindQueue(`q.${ENV.FROM_QUEUE}`, `ex.${ENV.FROM_QUEUE}.retry`, ENV.FROM_ROUTINGKEY);
-  await channel.bindQueue(`q.${ENV.FROM_QUEUE}`, `ex.${ENV.FROM_QUEUE}.retry`, 'retry');
+  await channel.bindQueue(`q.${ENV.QUEUE}`, `ex.${ENV.QUEUE}.retry`, ENV.ROUTINGKEY);
+  await channel.bindQueue(`q.${ENV.QUEUE}`, `ex.${ENV.QUEUE}.retry`, 'retry');
 
   return queueInfo
 }
 
 async function declareInboxExchange(channel: Channel) {
-  await channel.assertExchange(`ex.${ENV.FROM_EXCHANGE}`, 'direct', {
+  await channel.assertExchange(`ex.${ENV.EXCHANGE}`, 'direct', {
     durable: true, arguments: {
       "alternate-exchange": 'ex.last-hope'
     }
   });
-  await channel.bindQueue(`q.${ENV.FROM_QUEUE}`, `ex.${ENV.FROM_EXCHANGE}`, ENV.FROM_ROUTINGKEY);
+  await channel.bindQueue(`q.${ENV.QUEUE}`, `ex.${ENV.EXCHANGE}`, ENV.ROUTINGKEY);
 }
 
 async function createConsumer(): Promise<{ connection: ChannelModel, channel: Channel }> {
   const connection = await amqp.connect(URI_FROM)
   const channel = await connection.createChannel()
 
-  const retryQueueName = `q.${ENV.FROM_QUEUE}.retry.dlx`;
+  const retryQueueName = `q.${ENV.QUEUE}.retry.dlx`;
 
   await declareAlternateExchange(channel)
   await declareDlxExchanges(channel)
@@ -112,7 +110,7 @@ async function createConsumer(): Promise<{ connection: ChannelModel, channel: Ch
 
   await declareInboxExchange(channel)
 
-  console.log(`FROM: ${queueInfo.queue} messages in queue q.${ENV.FROM_QUEUE}`);
+  console.log(`FROM: ${queueInfo.queue} messages in queue q.${ENV.QUEUE}`);
 
   await channel.prefetch(ENV.PREFETCH, false);
 
@@ -124,7 +122,7 @@ async function runConsumer() {
 
   console.log(`Queue bound. Starting consumption with consumer tag "${CONSUMER_TAG}" and sleep ${ENV.SLEEP} ms`);
 
-  await channel.consume(`q.${ENV.FROM_QUEUE}`, async (msg: ConsumeMessage | null) => {
+  await channel.consume(`q.${ENV.QUEUE}`, async (msg: ConsumeMessage | null) => {
     if (!msg) return;
 
     console.log('message RK is:', msg.fields.routingKey, msg.fields.redelivered)

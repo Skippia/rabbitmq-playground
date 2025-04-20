@@ -2,12 +2,12 @@ import amqp, { Channel, ConsumeMessage, ChannelModel } from 'amqplib';
 import process from 'process';
 
 const ENV = {
-  FROM_USERNAME: process.env.FROM_USERNAME || "rmuser",
-  FROM_PASSWORD: encodeURIComponent(process.env.FROM_PASSWORD || "rmpassword"),
-  FROM_HOSTNAME: process.env.FROM_HOSTNAME || "rabbitmq",
-  FROM_PORT: process.env.FROM_PORT || "5672",
-  FROM_QUEUE: process.env.FROM_QUEUE || "",
-  FROM_ROUTINGKEY: process.env.FROM_ROUTINGKEY || "",
+  USERNAME: process.env.USERNAME || "rmuser",
+  PASSWORD: encodeURIComponent(process.env.PASSWORD || "rmpassword"),
+  HOSTNAME: process.env.HOSTNAME || "rabbitmq",
+  PORT: process.env.PORT || "5672",
+  QUEUE: process.env.QUEUE || "",
+  ROUTINGKEY: process.env.ROUTINGKEY || "",
   PREFETCH: parseInt(process.env.PREFETCH || "5", 10),
   FAIL: process.env.FAIL || "false",
   REJECTALL: process.env.REJECTALL || "false",
@@ -19,7 +19,7 @@ const ENV = {
   MANUAL_ACK: process.env.MANUAL_ACK == "true",
 };
 
-const URI_FROM = `amqp://${ENV.FROM_USERNAME}:${ENV.FROM_PASSWORD}@${ENV.FROM_HOSTNAME}:${ENV.FROM_PORT}/`
+const URI_FROM = `amqp://${ENV.USERNAME}:${ENV.PASSWORD}@${ENV.HOSTNAME}:${ENV.PORT}/`
 
 function fatalError(msg: string, err?: any): never {
   console.error(msg, err || "");
@@ -45,9 +45,9 @@ async function runConsumer() {
     console.log('Prefetch count:', ENV.PREFETCH);
   }
 
-  console.log(`queue ${ENV.FROM_QUEUE} has ${(await channel.checkQueue(ENV.FROM_QUEUE)).messageCount} messages`);
+  console.log(`queue ${ENV.QUEUE} has ${(await channel.checkQueue(ENV.QUEUE)).messageCount} messages`);
 
-  await channel.consume(ENV.FROM_QUEUE, async (msg: ConsumeMessage | null) => {
+  await channel.consume(ENV.QUEUE, async (msg: ConsumeMessage | null) => {
     if (!msg) return;
 
     if (ENV.MANUAL_ACK) {

@@ -71,4 +71,17 @@
     - Implement Avro/Protobuf serialization
     - *Task*: Add schema validation in consumers
 
-4. 
+  
+
+
+- TLS (на плечах прокси) + Letsencrypt (certabot) + Haproxy + Cluster
+  - 
+. Haproxy + 3 instances by shards or
+2.haproxy +lb cluster + 3 instances by shards / cluster(!)
+
+- shards or clustering!
+===Setup perf test to compare===
+
+
+3. Single vs cluster queue perf test (mirrored queue vs quorum queue)
+4.

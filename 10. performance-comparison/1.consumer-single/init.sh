@@ -1,11 +1,11 @@
 #!/bin/sh
 set -e
 
-rabbitmqadmin -u ${FROM_USERNAME} -p ${FROM_PASSWORD} declare queue \
-  name=${FROM_QUEUE}
+rabbitmqadmin -u ${USERNAME} -p ${PASSWORD} declare queue \
+  name=${QUEUE}
   durable=true \
 
-rabbitmqadmin -u ${FROM_USERNAME} -p ${FROM_PASSWORD} declare queue \
-  name=${FROM_QUEUE_NORMAL}
+rabbitmqadmin -u ${USERNAME} -p ${PASSWORD} declare queue \
+  name=${QUEUE_NORMAL}
   durable=true \
 

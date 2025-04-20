@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-rabbitmqadmin -u ${FROM_USERNAME} -p ${FROM_PASSWORD} declare queue \
+rabbitmqadmin -u ${USERNAME} -p ${PASSWORD} declare queue \
   name=${FROM_QUEUE}
   durable=true \
 

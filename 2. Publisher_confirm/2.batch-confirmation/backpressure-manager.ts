@@ -6,8 +6,7 @@ export class BackpressureManager {
   private primaryHandlers = 0;
   private retryHandlers = 0;
 
-  private waitingResolvers: (() => void)[] = []; // Queue of waiting promises
-
+  private waitingResolvers: ((value: void | PromiseLike<void>) => void)[] = []; // Queue of waiting promises
 
   constructor(maxConcurrentHandlers: number, retries: number) {
     this.maxConcurrentHandlers = maxConcurrentHandlers
@@ -17,12 +16,13 @@ export class BackpressureManager {
     console.dir({
       maxConcurrentHandlers: this.maxConcurrentHandlers,
       maxPrimaryHandlers: this.maxPrimaryHandlers,
+      maxRetryHandlers: this.maxRetryHandlers,
     })
   }
 
   /**
    * Acquire a slot for concurrent operations.
-   * If no slots are available, waits until one becomes free.
+   * If no slots are available, waits until one becomes free
    */
   async acquireSlot(mode: 'primary' | 'retry'): Promise<void> {
     if (mode === 'primary') {

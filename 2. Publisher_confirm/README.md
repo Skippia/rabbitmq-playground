@@ -11,10 +11,6 @@
 ### Sync confirmation
 - *0% retries*
   - 150(!) MPS
-- *10% retries*
-  - ?
-- *100% retries*
-  - ? 
 
 ### Async confirmation
 
@@ -22,8 +18,8 @@
   - 40k MPS
 - *10% retries*
   - max concurrent handlers:
-    - 10(3) -  MPS ( MB)
-    - 100(33) -  MPS ( MB)
+    - 10(3) - 20k  MPS (300 MB)
+    - 100(33) - 25k  MPS (360 MB)
     - 300(100) - MPS ( MB)
 - *100% retries*
   - max concurrent handlers:

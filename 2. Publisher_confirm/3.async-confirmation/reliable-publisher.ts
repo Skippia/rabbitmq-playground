@@ -81,7 +81,13 @@ export class AsyncReliablePublisher {
     if (retries === 0) await this.backpressureManager.acquireSlot('primary');
 
     const ok = normal
-      ? this.channelNormal.sendToQueue(queue, body, { deliveryMode: 2 })
+      ? this.channelNormal.sendToQueue(queue, body, { deliveryMode: 2 }, (err, ok) => {
+        if (!err) {
+          this.backpressureManager.releaseSlot('primary')
+        } else {
+          console.log('ok channel is failed')
+        }
+      })
       : this.channel.sendToQueue(queue, body, { deliveryMode: 2 }, (err, ok) => {
         if (err) {
           const seq = ++this.sequence;
